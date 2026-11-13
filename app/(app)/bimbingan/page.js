@@ -6,15 +6,25 @@ import { useUser } from '../layout';
 export default function BimbinganPage() {
   const { profile } = useUser();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('antrean'); // 'antrean' | 'mahasiswa'
+  const [activeTab, setActiveTab] = useState('antrean'); // 'antrean' | 'penilaian' | 'revisi' | 'mahasiswa'
+  
+  // Modal aksi proposal
   const [actionItem, setActionItem] = useState(null); // Item yang sedang ditindaklanjuti
   const [actionType, setActionType] = useState(''); // 'setujui' | 'revisi' | 'tolak'
   const [catatan, setCatatan] = useState('');
   const [processing, setProcessing] = useState(false);
   const [msg, setMsg] = useState(null);
 
+  // Modal penilaian seminar / ujian
+  const [modalPenilaian, setModalPenilaian] = useState(null); // Item seminar/ujian yang akan dinilai
+  const [inputNilai, setInputNilai] = useState('85');
+  const [catatanNilai, setCatatanNilai] = useState('');
+  const [savingNilai, setSavingNilai] = useState(false);
+
   // Data bimbingan
-  const [antreanList, setAntreanList] = useState([]);
+  const [antreanProposal, setAntreanProposal] = useState([]);
+  const [antreanPenilaian, setAntreanPenilaian] = useState([]);
+  const [antreanRevisi, setAntreanRevisi] = useState([]);
   const [mahasiswaList, setMahasiswaList] = useState([]);
 
   useEffect(() => {
@@ -34,7 +44,6 @@ export default function BimbinganPage() {
         .order('created_at', { ascending: false });
 
       if (skripsiData && skripsiData.length > 0) {
-        // Ambil data profil mahasiswa terkait
         const mhsIds = skripsiData.map((s) => s.mahasiswa_id);
         const { data: profilesData } = await supabase
           .from('profiles')
@@ -42,7 +51,6 @@ export default function BimbinganPage() {
           .in('id', mhsIds);
         const profileMap = Object.fromEntries((profilesData || []).map((p) => [p.id, p]));
 
-        // Ambil pengajuan terakhir untuk tiap skripsi
         const skripsiIds = skripsiData.map((s) => s.id);
         const { data: pengajuanData } = await supabase
           .from('pengajuan')
@@ -50,12 +58,12 @@ export default function BimbinganPage() {
           .in('skripsi_id', skripsiIds)
           .order('dibuat_pada', { ascending: false });
 
-        // Ambil berkas terkait pengajuan
         const pIds = (pengajuanData || []).map((p) => p.id);
-        const { data: berkasData } = await supabase
-          .from('berkas')
-          .select('*')
-          .in('pengajuan_id', pIds);
+        const [{ data: berkasData }, { data: pengujiData }, { data: revisiData }] = await Promise.all([
+          supabase.from('berkas').select('*').in('pengajuan_id', pIds),
+          supabase.from('penguji').select('*').in('pengajuan_id', pIds),
+          supabase.from('revisi').select('*').in('pengajuan_id', pIds),
+        ]);
 
         const berkasMap = {};
         (berkasData || []).forEach((b) => {
@@ -63,14 +71,29 @@ export default function BimbinganPage() {
           berkasMap[b.pengajuan_id].push(b);
         });
 
-        // Susun data mahasiswa bimbingan & antrean
+        const pengujiMap = {};
+        (pengujiData || []).forEach((pg) => {
+          if (!pengujiMap[pg.pengajuan_id]) pengujiMap[pg.pengajuan_id] = [];
+          pengujiMap[pg.pengajuan_id].push(pg);
+        });
+
+        const revisiMap = {};
+        (revisiData || []).forEach((r) => {
+          if (!revisiMap[r.pengajuan_id]) revisiMap[r.pengajuan_id] = [];
+          revisiMap[r.pengajuan_id].push(r);
+        });
+
         const mList = [];
-        const aList = [];
+        const aProposal = [];
+        const aPenilaian = [];
+        const aRevisi = [];
 
         skripsiData.forEach((s) => {
           const mhs = profileMap[s.mahasiswa_id] || { nama: 'Mahasiswa', noid: '-', prodi: 'Akuakultur' };
           const pLatest = (pengajuanData || []).find((p) => p.skripsi_id === s.id);
           const berkas = pLatest ? berkasMap[pLatest.id] || [] : [];
+          const penguji = pLatest ? pengujiMap[pLatest.id] || [] : [];
+          const revisi = pLatest ? revisiMap[pLatest.id] || [] : [];
           const peran = s.pembimbing1_id === profile.id ? 'Pembimbing Utama' : 'Pembimbing Pendamping';
 
           const item = {
@@ -78,21 +101,34 @@ export default function BimbinganPage() {
             mahasiswa: mhs,
             pengajuan: pLatest,
             berkas,
+            penguji,
+            revisi,
             peran,
           };
 
           mList.push(item);
 
-          // Masuk antrean jika status diverifikasi admin atau diajukan mahasiswa
-          if (pLatest && (pLatest.status === 'diverifikasi' || pLatest.status === 'diajukan')) {
-            aList.push(item);
+          if (pLatest) {
+            // Antrean proposal
+            if (pLatest.jenis === 'proposal' && (pLatest.status === 'diverifikasi' || pLatest.status === 'diajukan')) {
+              aProposal.push(item);
+            }
+            // Antrean penilaian seminar / ujian
+            if (pLatest.jenis !== 'proposal' && (pLatest.status === 'terjadwal' || pLatest.status === 'diajukan')) {
+              aPenilaian.push(item);
+            }
+            // Antrean validasi revisi
+            if (pLatest.status === 'revisi' || revisi.some((r) => r.dosen_id === profile.id && r.status !== 'disetujui')) {
+              aRevisi.push(item);
+            }
           }
         });
 
         setMahasiswaList(mList);
-        setAntreanList(aList);
+        setAntreanProposal(aProposal);
+        setAntreanPenilaian(aPenilaian);
+        setAntreanRevisi(aRevisi);
       } else {
-        // Gunakan demo data jika belum ada data di database
         loadDemoBimbingan();
       }
     } catch {
@@ -103,99 +139,93 @@ export default function BimbinganPage() {
   }
 
   function loadDemoBimbingan() {
-    // Ambil data jika tersimpan di localStorage dari submit mahasiswa
-    const demoStudentSkripsi = typeof window !== 'undefined' ? localStorage.getItem('siskrip_demo_skripsi_demo-user-id') : null;
     let submittedItem = null;
-    if (demoStudentSkripsi) {
-      try {
-        const parsed = JSON.parse(demoStudentSkripsi);
-        if (parsed.skripsi && parsed.pengajuanList?.[0]) {
-          submittedItem = {
-            skripsi: parsed.skripsi,
-            mahasiswa: { nama: 'Budi Santoso', noid: '22/499123/PN/18000', prodi: 'Akuakultur' },
-            pengajuan: parsed.pengajuanList[0],
-            berkas: parsed.berkasList || [{ id: 'b1', nama: 'Draft_Proposal_Budi_Santoso.pdf', ukuran: 2450000 }],
-            peran: 'Pembimbing Utama',
-          };
+    if (typeof window !== 'undefined') {
+      const demoKey = 'siskrip_demo_skripsi_demo-user-id';
+      const cur = localStorage.getItem(demoKey);
+      if (cur) {
+        try {
+          const parsed = JSON.parse(cur);
+          if (parsed.skripsi && parsed.pengajuanList?.[0]) {
+            submittedItem = {
+              skripsi: parsed.skripsi,
+              mahasiswa: { nama: 'Budi Santoso', noid: '22/499123/PN/18000', prodi: 'Akuakultur' },
+              pengajuan: parsed.pengajuanList[0],
+              berkas: parsed.berkasList || [{ id: 'b1', nama: 'Proposal_Skripsi_Budi_Santoso.pdf', ukuran: 2450000 }],
+              penguji: parsed.pengujiList || [],
+              revisi: parsed.revisiList || [],
+              peran: 'Pembimbing Utama',
+            };
+          }
+        } catch (e) {
+          console.warn(e);
         }
-      } catch (e) {
-        console.warn(e);
       }
     }
 
-    const defaultItems = [
-      submittedItem || {
+    const defaultProposal = submittedItem && submittedItem.pengajuan?.jenis === 'proposal' && submittedItem.pengajuan?.status !== 'disetujui' && submittedItem.pengajuan?.status !== 'selesai'
+      ? [submittedItem]
+      : [
+          {
+            skripsi: {
+              id: 'sk-2',
+              judul: 'Formulasi Pakan Mandiri Berbasis Limbah Pengolahan Ikan Tuna untuk Efisiensi Budidaya Patin',
+              abstrak: 'Optimalisasi pemanfaatan limbah perikanan sebagai substitusi tepung ikan guna menekan rasio konversi pakan (FCR)...',
+              tahap_saat_ini: 'proposal',
+            },
+            mahasiswa: { nama: 'Siti Rahmawati', noid: '22/498765/PN/17988', prodi: 'Teknologi Hasil Perikanan' },
+            pengajuan: { id: 'p-2', jenis: 'proposal', status: 'diverifikasi', dibuat_pada: new Date().toISOString() },
+            berkas: [{ id: 'b-2', nama: 'Proposal_Siti_Rahmawati_THP.pdf', ukuran: 1800000 }],
+            peran: 'Pembimbing Utama',
+          },
+        ];
+
+    const defaultPenilaian = [
+      (submittedItem && submittedItem.pengajuan?.jenis !== 'proposal' && submittedItem.pengajuan?.status === 'terjadwal') ? submittedItem : {
         skripsi: {
           id: 'sk-1',
           judul: 'Kajian Efektivitas Probiotik Bacillus sp. pada Budidaya Udang Vaname (Litopenaeus vannamei)',
-          abstrak: 'Penelitian ini bertujuan untuk menganalisis efektivitas pemberian probiotik terhadap sintasan dan pertumbuhan udang vaname di tambak intensif...',
-          tahap_saat_ini: 'proposal',
+          abstrak: 'Penelitian ini menguji pengaruh konsentrasi probiotik terhadap kelangsungan hidup dan laju pertumbuhan udang vaname di tambak intensif.',
+          tahap_saat_ini: 'seminar_proposal',
         },
-        mahasiswa: {
-          nama: 'Budi Santoso',
-          noid: '22/499123/PN/18000',
-          prodi: 'Akuakultur',
-        },
+        mahasiswa: { nama: 'Budi Santoso', noid: '22/499123/PN/18000', prodi: 'Akuakultur' },
         pengajuan: {
           id: 'p-1',
-          jenis: 'proposal',
-          status: 'diverifikasi',
-          catatan: 'Berkas administrasi dan format proposal telah diverifikasi lengkap oleh admin departemen.',
-          dibuat_pada: new Date(Date.now() - 3600000 * 24).toISOString(),
+          jenis: 'seminar_proposal',
+          status: 'terjadwal',
+          tanggal_pelaksanaan: '2026-11-18',
+          ruangan: 'Ruang Sidang 1 Dept. Perikanan',
+          catatan: 'Seminar Proposal dijadwalkan oleh admin departemen',
         },
-        berkas: [{ id: 'b-1', nama: 'Draf_Proposal_Budi_Santoso.pdf', ukuran: 3200000 }],
-        peran: 'Pembimbing Utama',
+        berkas: [{ id: 'b-1', nama: 'Proposal_Skripsi_Budi_Santoso.pdf', ukuran: 3200000 }],
+        peran: 'Ketua Penguji / Pembimbing',
       },
-      {
-        skripsi: {
-          id: 'sk-2',
-          judul: 'Formulasi Pakan Mandiri Berbasis Limbah Pengolahan Ikan Tuna untuk Efisiensi Budidaya Patin',
-          abstrak: 'Optimalisasi pemanfaatan limbah perikanan sebagai substitusi tepung ikan guna menekan rasio konversi pakan (FCR)...',
-          tahap_saat_ini: 'proposal',
-        },
-        mahasiswa: {
-          nama: 'Siti Rahmawati',
-          noid: '22/498765/PN/17988',
-          prodi: 'Teknologi Hasil Perikanan',
-        },
-        pengajuan: {
-          id: 'p-2',
-          jenis: 'proposal',
-          status: 'diajukan',
-          catatan: 'Draf proposal baru dikirimkan mahasiswa.',
-          dibuat_pada: new Date(Date.now() - 3600000 * 48).toISOString(),
-        },
-        berkas: [{ id: 'b-2', nama: 'Proposal_Siti_Rahmawati_THP.pdf', ukuran: 1800000 }],
-        peran: 'Pembimbing Utama',
-      },
+    ];
+
+    const defaultRevisi = [
       {
         skripsi: {
           id: 'sk-3',
           judul: 'Dinamika Populasi dan Pola Rekrutmen Rajungan (Portunus pelagicus) di Teluk Bintan',
           abstrak: 'Kajian stok sumber daya perikanan menggunakan model surplus produksi Schaefer...',
-          tahap_saat_ini: 'seminar_proposal',
+          tahap_saat_ini: 'ujian',
         },
-        mahasiswa: {
-          nama: 'Ahmad Fauzi',
-          noid: '21/476543/PN/17120',
-          prodi: 'Manajemen Sumberdaya Akuatik',
-        },
-        pengajuan: {
-          id: 'p-3',
-          jenis: 'proposal',
-          status: 'disetujui',
-          catatan: 'Materi kajian dan metodologi disetujui. Siap seminar proposal.',
-          dibuat_pada: new Date(Date.now() - 3600000 * 120).toISOString(),
-        },
-        berkas: [{ id: 'b-3', nama: 'Proposal_Final_Ahmad_Fauzi.pdf', ukuran: 4100000 }],
-        peran: 'Pembimbing Pendamping',
+        mahasiswa: { nama: 'Ahmad Fauzi', noid: '21/476543/PN/17120', prodi: 'Manajemen Sumberdaya Akuatik' },
+        pengajuan: { id: 'p-3', jenis: 'ujian', status: 'revisi', catatan: 'Perbaiki bab pembahasan dan cantumkan uji signifikansi statistik.' },
+        revisi: [
+          { id: 'r-1', dosen_id: 'dosen-2', isi: 'Perbaiki bab pembahasan dan cantumkan uji signifikansi statistik.', status: 'pending', berkas_revisi_path: 'Revisi_Ahmad_Fauzi_Final.pdf' },
+        ],
+        peran: 'Pembimbing Utama',
       },
     ];
 
-    setMahasiswaList(defaultItems);
-    setAntreanList(defaultItems.filter((i) => i.pengajuan?.status === 'diverifikasi' || i.pengajuan?.status === 'diajukan'));
+    setAntreanProposal(defaultProposal);
+    setAntreanPenilaian(defaultPenilaian);
+    setAntreanRevisi(defaultRevisi);
+    setMahasiswaList([...defaultProposal, ...defaultPenilaian, ...defaultRevisi]);
   }
 
+  // 1. Aksi Persetujuan Proposal
   function openActionModal(item, type) {
     setActionItem(item);
     setActionType(type);
@@ -214,18 +244,8 @@ export default function BimbinganPage() {
 
     try {
       const pId = actionItem.pengajuan?.id;
-      if (pId) {
-        // 1. Update status pengajuan di database Supabase
-        await supabase
-          .from('pengajuan')
-          .update({
-            status: newStatus,
-            catatan: catatan.trim(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', pId);
-
-        // 2. Tambah audit log
+      if (pId && !pId.startsWith('p-')) {
+        await supabase.from('pengajuan').update({ status: newStatus, catatan: catatan.trim(), updated_at: new Date().toISOString() }).eq('id', pId);
         await supabase.from('audit_log').insert({
           pengajuan_id: pId,
           user_id: profile?.id,
@@ -235,30 +255,9 @@ export default function BimbinganPage() {
         });
       }
 
-      // Update state lokal
-      const updatedAntrean = antreanList.filter((a) => a.skripsi.id !== actionItem.skripsi.id);
-      const updatedMahasiswa = mahasiswaList.map((m) => {
-        if (m.skripsi.id === actionItem.skripsi.id) {
-          return {
-            ...m,
-            pengajuan: {
-              ...m.pengajuan,
-              status: newStatus,
-              catatan: catatan.trim(),
-            },
-            skripsi: {
-              ...m.skripsi,
-              tahap_saat_ini: newStatus === 'disetujui' ? 'seminar_proposal' : m.skripsi.tahap_saat_ini,
-            },
-          };
-        }
-        return m;
-      });
+      setAntreanProposal((prev) => prev.filter((a) => a.skripsi.id !== actionItem.skripsi.id));
 
-      setAntreanList(updatedAntrean);
-      setMahasiswaList(updatedMahasiswa);
-
-      // Simpan demo state jika mahasiswa yang diupdate sama
+      // Simpan demo state
       if (typeof window !== 'undefined' && actionItem.mahasiswa?.noid === '22/499123/PN/18000') {
         const demoKey = 'siskrip_demo_skripsi_demo-user-id';
         const cur = localStorage.getItem(demoKey);
@@ -284,22 +283,165 @@ export default function BimbinganPage() {
         }
       }
 
-      setMsg({
-        err: false,
-        text: `Tindakan ${actionType.toUpperCase()} untuk mahasiswa ${actionItem.mahasiswa.nama} berhasil disimpan!`,
-      });
+      setMsg({ err: false, text: `Tindakan ${actionType.toUpperCase()} untuk mahasiswa ${actionItem.mahasiswa.nama} berhasil disimpan!` });
       setActionItem(null);
     } catch (err) {
-      setMsg({ err: true, text: 'Gagal memproses persetujuan: ' + err.message });
+      setMsg({ err: true, text: 'Gagal memproses: ' + err.message });
     } finally {
       setProcessing(false);
     }
   }
 
+  // 2. Aksi Pengisian Nilai & Catatan Evaluasi Seminar / Ujian
+  async function handleSubmitPenilaian() {
+    if (!modalPenilaian) return;
+    const scoreNum = parseFloat(inputNilai);
+    if (isNaN(scoreNum) || scoreNum < 0 || scoreNum > 100) {
+      setMsg({ err: true, text: 'Nilai harus berupa angka antara 0 hingga 100.' });
+      return;
+    }
+
+    setSavingNilai(true);
+    try {
+      const pId = modalPenilaian.pengajuan?.id;
+      if (pId && !pId.startsWith('p-')) {
+        // Simpan / update di tabel penguji
+        await supabase.from('penguji').upsert({
+          pengajuan_id: pId,
+          dosen_id: profile.id,
+          peran: 'pembimbing',
+          nilai: scoreNum,
+          catatan: catatanNilai.trim(),
+          dinilai_pada: new Date().toISOString(),
+        });
+
+        // Buat record revisi jika ada catatan perbaikan
+        if (catatanNilai.trim()) {
+          await supabase.from('revisi').insert({
+            pengajuan_id: pId,
+            dosen_id: profile.id,
+            isi: catatanNilai.trim(),
+            status: 'pending',
+          });
+          // Ubah status pengajuan menjadi 'revisi'
+          await supabase.from('pengajuan').update({ status: 'revisi', catatan: 'Dosen memberikan catatan revisi pasca seminar/ujian.' }).eq('id', pId);
+        }
+      }
+
+      setAntreanPenilaian((prev) => prev.filter((a) => a.skripsi.id !== modalPenilaian.skripsi.id));
+
+      // Simpan demo state
+      if (typeof window !== 'undefined' && modalPenilaian.mahasiswa?.noid === '22/499123/PN/18000') {
+        const demoKey = 'siskrip_demo_skripsi_demo-user-id';
+        const cur = localStorage.getItem(demoKey);
+        if (cur) {
+          const parsed = JSON.parse(cur);
+          if (parsed.pengajuanList?.[0]) {
+            parsed.pengajuanList[0].status = 'revisi';
+            parsed.pengajuanList[0].catatan = catatanNilai.trim() || 'Nilai terkirim. Lanjutkan revisi.';
+            parsed.pengujiList = [
+              {
+                id: 'pg-1',
+                profiles: { nama: profile.nama, noid: profile.noid },
+                peran: 'Ketua Penguji / Pembimbing',
+                nilai: scoreNum,
+                catatan: catatanNilai.trim(),
+              },
+            ];
+            parsed.revisiList = [
+              {
+                id: 'r-new',
+                dosen_id: profile.id,
+                profiles: { nama: profile.nama, noid: profile.noid },
+                isi: catatanNilai.trim() || 'Perbaiki format naskah dan grafik pembahasan.',
+                status: 'pending',
+              },
+            ];
+            parsed.auditLogs = [
+              {
+                id: 'audit-' + Date.now(),
+                pengajuan_id: parsed.pengajuanList[0].id,
+                status_lama: 'terjadwal',
+                status_baru: 'revisi',
+                catatan: `Penilaian diisi (${scoreNum}) dengan catatan revisi: ${catatanNilai.trim()}`,
+                created_at: new Date().toISOString(),
+              },
+              ...(parsed.auditLogs || []),
+            ];
+            localStorage.setItem(demoKey, JSON.stringify(parsed));
+          }
+        }
+      }
+
+      setMsg({ err: false, text: `Nilai (${scoreNum}) dan catatan evaluasi untuk ${modalPenilaian.mahasiswa.nama} berhasil disimpan!` });
+      setModalPenilaian(null);
+    } catch (err) {
+      setMsg({ err: true, text: 'Gagal menyimpan penilaian: ' + err.message });
+    } finally {
+      setSavingNilai(false);
+    }
+  }
+
+  // 3. Aksi Validasi Revisi Mahasiswa per Validator
+  async function handleValidasiRevisi(item, statusTarget, note) {
+    try {
+      if (item.pengajuan?.id && !item.pengajuan.id.startsWith('p-')) {
+        await supabase
+          .from('revisi')
+          .update({
+            status: statusTarget,
+            catatan_validasi: note || (statusTarget === 'disetujui' ? 'Revisi disetujui' : 'Perlu perbaikan ulang'),
+            divalidasi_pada: new Date().toISOString(),
+          })
+          .eq('pengajuan_id', item.pengajuan.id)
+          .eq('dosen_id', profile.id);
+      }
+
+      setAntreanRevisi((prev) => prev.filter((a) => a.skripsi.id !== item.skripsi.id));
+
+      if (typeof window !== 'undefined' && item.mahasiswa?.noid === '22/499123/PN/18000') {
+        const demoKey = 'siskrip_demo_skripsi_demo-user-id';
+        const cur = localStorage.getItem(demoKey);
+        if (cur) {
+          const parsed = JSON.parse(cur);
+          if (parsed.pengajuanList?.[0]) {
+            parsed.pengajuanList[0].status = 'selesai';
+            parsed.pengajuanList[0].catatan = 'Seluruh revisi disetujui oleh dosen validator!';
+            if (parsed.skripsi.tahap_saat_ini === 'seminar_proposal') parsed.skripsi.tahap_saat_ini = 'seminar_hasil';
+            else if (parsed.skripsi.tahap_saat_ini === 'seminar_hasil') parsed.skripsi.tahap_saat_ini = 'ujian';
+            else if (parsed.skripsi.tahap_saat_ini === 'ujian') parsed.skripsi.tahap_saat_ini = 'yudisium';
+
+            if (parsed.revisiList) {
+              parsed.revisiList = parsed.revisiList.map((r) => ({ ...r, status: statusTarget }));
+            }
+            parsed.auditLogs = [
+              {
+                id: 'audit-' + Date.now(),
+                pengajuan_id: parsed.pengajuanList[0].id,
+                status_lama: 'revisi',
+                status_baru: 'selesai',
+                catatan: 'Semua poin revisi disetujui dosen validator. Tahap dinyatakan selesai.',
+                created_at: new Date().toISOString(),
+              },
+              ...(parsed.auditLogs || []),
+            ];
+            localStorage.setItem(demoKey, JSON.stringify(parsed));
+          }
+        }
+      }
+
+      setMsg({ err: false, text: `Validasi revisi mahasiswa ${item.mahasiswa.nama} berhasil disetujui!` });
+    } catch (err) {
+      setMsg({ err: true, text: 'Gagal memvalidasi revisi: ' + err.message });
+    }
+  }
+
+  const totalAntrean = antreanProposal.length + antreanPenilaian.length + antreanRevisi.length;
+
   if (loading) {
     return (
       <div className="wrap" style={{ textAlign: 'center', padding: '3rem 1rem' }}>
-        <p className="mut">Memuat portal bimbingan dosen...</p>
+        <p className="mut">Memuat portal bimbingan dosen & tim penguji...</p>
       </div>
     );
   }
@@ -309,52 +451,65 @@ export default function BimbinganPage() {
       {/* Header */}
       <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2 style={{ fontSize: '1.75rem', fontWeight: 800 }}>Bimbingan Skripsi</h2>
-          <p className="mut">Kelola persetujuan naskah proposal mahasiswa bimbingan dan pantau progres tahapan skripsi.</p>
+          <h2 style={{ fontSize: '1.8rem', fontWeight: 800 }}>Bimbingan & Pengujian</h2>
+          <p className="mut">Persetujuan proposal, pengisian nilai ujian/seminar, dan validasi berkas revisi mahasiswa.</p>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem', background: 'var(--card)', padding: '0.3rem', borderRadius: '14px', border: '1px solid var(--bd)' }}>
+        <div style={{ display: 'flex', gap: '0.4rem', background: 'var(--card)', padding: '0.3rem', borderRadius: '14px', border: '1px solid var(--bd)', flexWrap: 'wrap' }}>
           <button
             className={`btn-action ${activeTab === 'antrean' ? 'btn-approve' : 'btn-neutral'}`}
-            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+            style={{ padding: '0.5rem 0.85rem', fontSize: '0.82rem' }}
             onClick={() => setActiveTab('antrean')}
           >
-            🔔 Perlu Tindakan ({antreanList.length})
+            📋 Proposal ({antreanProposal.length})
+          </button>
+          <button
+            className={`btn-action ${activeTab === 'penilaian' ? 'btn-approve' : 'btn-neutral'}`}
+            style={{ padding: '0.5rem 0.85rem', fontSize: '0.82rem' }}
+            onClick={() => setActiveTab('penilaian')}
+          >
+            ⭐ Penilaian Ujian ({antreanPenilaian.length})
+          </button>
+          <button
+            className={`btn-action ${activeTab === 'revisi' ? 'btn-approve' : 'btn-neutral'}`}
+            style={{ padding: '0.5rem 0.85rem', fontSize: '0.82rem' }}
+            onClick={() => setActiveTab('revisi')}
+          >
+            ✍️ Validasi Revisi ({antreanRevisi.length})
           </button>
           <button
             className={`btn-action ${activeTab === 'mahasiswa' ? 'btn-approve' : 'btn-neutral'}`}
-            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+            style={{ padding: '0.5rem 0.85rem', fontSize: '0.82rem' }}
             onClick={() => setActiveTab('mahasiswa')}
           >
-            👥 Semua Mahasiswa ({mahasiswaList.length})
+            👥 Mahasiswa ({mahasiswaList.length})
           </button>
         </div>
       </div>
 
-      {/* Tab 1: Antrean Perlu Tindakan Anda */}
+      {/* TAB 1: PERSETUJUAN PROPOSAL */}
       {activeTab === 'antrean' && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
             <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>
-              Antrean Pengajuan Menunggu Evaluasi ({antreanList.length})
+              Antrean Penelaahan Proposal ({antreanProposal.length})
             </h3>
-            <span className="mut" style={{ fontSize: '0.85rem' }}>
+            <span className="mut" style={{ fontSize: '0.82rem' }}>
               Dosen hanya melihat proposal dari mahasiswa bimbingannya
             </span>
           </div>
 
-          {antreanList.length === 0 ? (
+          {antreanProposal.length === 0 ? (
             <div className="card" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
               <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.75rem' }}>🎉</span>
-              <h4 style={{ fontSize: '1.15rem', marginBottom: '0.35rem' }}>Tidak Ada Antrean Tertunda</h4>
+              <h4 style={{ fontSize: '1.15rem', marginBottom: '0.35rem' }}>Tidak Ada Proposal Tertunda</h4>
               <p className="mut" style={{ maxWidth: '420px', margin: '0 auto', fontSize: '0.88rem' }}>
-                Semua pengajuan proposal skripsi dari mahasiswa bimbingan Anda telah selesai ditinjau.
+                Seluruh pengajuan proposal skripsi mahasiswa bimbingan Anda telah selesai ditinjau.
               </p>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {antreanList.map((item) => (
+              {antreanProposal.map((item) => (
                 <div key={item.skripsi.id} className="card" style={{ padding: '1.5rem' }}>
-                  {/* Info Mahasiswa & Status */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.8rem', marginBottom: '1rem' }}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.2rem' }}>
@@ -365,16 +520,14 @@ export default function BimbinganPage() {
                         </span>
                       </div>
                       <p className="mut" style={{ fontSize: '0.82rem' }}>
-                        Peran Anda: <b>{item.peran}</b> · Tanggal Pengajuan:{' '}
-                        {item.pengajuan?.dibuat_pada ? new Date(item.pengajuan.dibuat_pada).toLocaleDateString('id-ID', { dateStyle: 'long' }) : '-'}
+                        Peran Anda: <b>{item.peran}</b>
                       </p>
                     </div>
-                    <span className={`status-badge status-${item.pengajuan?.status || 'pending'}`}>
-                      {item.pengajuan?.status === 'diverifikasi' ? 'Admin: Terverifikasi' : 'Menunggu Telaah'}
+                    <span className="status-badge status-diverifikasi">
+                      Admin: Terverifikasi
                     </span>
                   </div>
 
-                  {/* Judul & Abstrak */}
                   <div style={{ background: 'var(--bg)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--bd)', marginBottom: '1.25rem' }}>
                     <h4 style={{ fontSize: '0.98rem', fontWeight: 700, marginBottom: '0.4rem', color: 'var(--pri)' }}>
                       📖 {item.skripsi.judul}
@@ -384,10 +537,9 @@ export default function BimbinganPage() {
                     </p>
                   </div>
 
-                  {/* Dokumen Naskah Proposal PDF */}
                   {item.berkas && item.berkas.length > 0 && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Dokumen Pendukung:</span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Dokumen Naskah:</span>
                       {item.berkas.map((b) => (
                         <div
                           key={b.id}
@@ -404,15 +556,11 @@ export default function BimbinganPage() {
                           }}
                         >
                           <span>📄 {b.nama}</span>
-                          <span className="mut" style={{ fontSize: '0.75rem' }}>
-                            ({b.ukuran ? `${(b.ukuran / (1024 * 1024)).toFixed(1)} MB` : 'PDF'})
-                          </span>
                         </div>
                       ))}
                     </div>
                   )}
 
-                  {/* Tombol Aksi Dosen */}
                   <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', flexWrap: 'wrap', borderTop: '1px solid var(--bd)', paddingTop: '1rem' }}>
                     <button
                       className="btn-action btn-reject"
@@ -443,14 +591,159 @@ export default function BimbinganPage() {
         </div>
       )}
 
-      {/* Tab 2: Semua Mahasiswa Bimbingan */}
+      {/* TAB 2: PENILAIAN SEMINAR & UJIAN */}
+      {activeTab === 'penilaian' && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>
+              Ujian & Seminar Siap Dinilai ({antreanPenilaian.length})
+            </h3>
+            <span className="mut" style={{ fontSize: '0.82rem' }}>
+              Dosen penguji & pembimbing menginput nilai (0–100) dan catatan evaluasi
+            </span>
+          </div>
+
+          {antreanPenilaian.length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
+              <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.75rem' }}>⭐</span>
+              <h4 style={{ fontSize: '1.15rem', marginBottom: '0.35rem' }}>Tidak Ada Jadwal Ujian yang Perlu Dinilai</h4>
+              <p className="mut" style={{ maxWidth: '420px', margin: '0 auto', fontSize: '0.88rem' }}>
+                Seluruh penilaian seminar proposal, seminar hasil, dan ujian skripsi telah terekap.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {antreanPenilaian.map((item) => (
+                <div key={item.skripsi.id} className="card" style={{ padding: '1.5rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.8rem', marginBottom: '1rem' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.2rem' }}>
+                        <span style={{ fontWeight: 800, fontSize: '1.1rem' }}>{item.mahasiswa.nama}</span>
+                        <span className="tag">{item.mahasiswa.noid}</span>
+                        <span className="tag" style={{ background: 'var(--pri)', color: '#fff', fontWeight: 700 }}>
+                          {item.pengajuan?.jenis.replace('_', ' ').toUpperCase()}
+                        </span>
+                      </div>
+                      <p className="mut" style={{ fontSize: '0.82rem' }}>
+                        Tanggal: <b>{item.pengajuan?.tanggal_pelaksanaan ? new Date(item.pengajuan.tanggal_pelaksanaan).toLocaleDateString('id-ID', { dateStyle: 'full' }) : 'Terjadwal'}</b> · Ruang: <b>{item.pengajuan?.ruangan || 'Ruang Sidang'}</b>
+                      </p>
+                    </div>
+                    <span className="status-badge status-terjadwal">
+                      Siap Dinilai
+                    </span>
+                  </div>
+
+                  <div style={{ background: 'var(--bg)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--bd)', marginBottom: '1.25rem' }}>
+                    <h4 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '0.3rem', color: 'var(--pri)' }}>
+                      📖 {item.skripsi.judul}
+                    </h4>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--tx)', margin: 0 }}>
+                      {item.skripsi.abstrak}
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--bd)', paddingTop: '1rem' }}>
+                    <button
+                      className="btn-action btn-approve"
+                      style={{ padding: '0.65rem 1.6rem', fontSize: '0.88rem', fontWeight: 700 }}
+                      onClick={() => {
+                        setModalPenilaian(item);
+                        setInputNilai('85');
+                        setCatatanNilai('Pembahasan dan penguasaan materi sangat baik. Lanjutkan sedikit perbaikan pada pustaka.');
+                      }}
+                    >
+                      ⭐ Input Nilai & Catatan Evaluasi
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 3: VALIDASI REVISI MAHASISWA */}
+      {activeTab === 'revisi' && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>
+              Antrean Validasi Revisi Pasca Ujian/Seminar ({antreanRevisi.length})
+            </h3>
+            <span className="mut" style={{ fontSize: '0.82rem' }}>
+              Setiap penguji & pembimbing memvalidasi berkas revisi satu per satu
+            </span>
+          </div>
+
+          {antreanRevisi.length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
+              <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.75rem' }}>✅</span>
+              <h4 style={{ fontSize: '1.15rem', marginBottom: '0.35rem' }}>Tidak Ada Berkas Revisi Tertunda</h4>
+              <p className="mut" style={{ maxWidth: '420px', margin: '0 auto', fontSize: '0.88rem' }}>
+                Seluruh naskah revisi mahasiswa bimbingan telah divalidasi dan disetujui.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {antreanRevisi.map((item) => (
+                <div key={item.skripsi.id} className="card" style={{ padding: '1.5rem', border: '1px solid #ea580c' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.8rem', marginBottom: '1rem' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.2rem' }}>
+                        <span style={{ fontWeight: 800, fontSize: '1.05rem' }}>{item.mahasiswa.nama}</span>
+                        <span className="tag">{item.mahasiswa.noid}</span>
+                        <span className="tag" style={{ background: '#ea580c', color: '#fff', fontWeight: 700 }}>
+                          REVISI {item.pengajuan?.jenis.replace('_', ' ').toUpperCase()}
+                        </span>
+                      </div>
+                      <p className="mut" style={{ fontSize: '0.82rem' }}>
+                        Judul: <b>{item.skripsi.judul}</b>
+                      </p>
+                    </div>
+                    <span className="status-badge status-revisi">
+                      Menunggu Validasi Anda
+                    </span>
+                  </div>
+
+                  <div style={{ background: 'var(--bg)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--bd)', marginBottom: '1.25rem' }}>
+                    <p style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--tx)', marginBottom: '0.35rem' }}>
+                      📄 Dokumen Naskah Revisi yang Diunggah Mahasiswa:
+                    </p>
+                    <span className="tag" style={{ background: 'rgba(11, 58, 99, 0.1)', color: 'var(--pri)', fontWeight: 700 }}>
+                      📑 Berkas_Revisi_Terkini.pdf (PDF Terlampir)
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', borderTop: '1px solid var(--bd)', paddingTop: '1rem' }}>
+                    <button
+                      className="btn-action btn-reject"
+                      style={{ padding: '0.6rem 1.2rem', fontSize: '0.85rem' }}
+                      onClick={() => handleValidasiRevisi(item, 'perlu_revisi', 'Naskah belum sepenuhnya memenuhi catatan penguji.')}
+                    >
+                      ↩️ Minta Perbaikan Ulang
+                    </button>
+                    <button
+                      className="btn-action btn-approve"
+                      style={{ padding: '0.6rem 1.4rem', fontSize: '0.85rem', fontWeight: 700 }}
+                      onClick={() => handleValidasiRevisi(item, 'disetujui', 'Revisi telah diperiksa dan disetujui.')}
+                    >
+                      ✅ Setujui Revisi Naskah
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 4: SEMUA MAHASISWA */}
       {activeTab === 'mahasiswa' && (
         <div className="card" style={{ padding: '1.25rem' }}>
           <h3 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '0.4rem' }}>
-            Daftar Seluruh Mahasiswa Bimbingan ({mahasiswaList.length})
+            Daftar Seluruh Mahasiswa Bimbingan & Yang Diuji ({mahasiswaList.length})
           </h3>
           <p className="mut" style={{ marginBottom: '1.25rem', fontSize: '0.85rem' }}>
-            Rekap mahasiswa yang sedang Anda bimbing beserta tahapan skripsi masing-masing.
+            Rekap mahasiswa yang sedang Anda bimbing atau uji beserta tahapan skripsi masing-masing.
           </p>
 
           <div className="admin-table-wrap">
@@ -473,12 +766,8 @@ export default function BimbinganPage() {
                         {m.mahasiswa.noid} · {m.mahasiswa.prodi}
                       </span>
                     </td>
-                    <td>
-                      <span className="tag" style={{ fontWeight: 600 }}>{m.peran}</span>
-                    </td>
-                    <td style={{ maxWidth: '320px', lineHeight: 1.4, fontSize: '0.85rem' }}>
-                      {m.skripsi.judul}
-                    </td>
+                    <td><span className="tag">{m.peran}</span></td>
+                    <td style={{ maxWidth: '300px', fontSize: '0.85rem', lineHeight: 1.4 }}>{m.skripsi.judul}</td>
                     <td>
                       <span className="tag" style={{ textTransform: 'capitalize', fontWeight: 700 }}>
                         {m.skripsi.tahap_saat_ini.replace('_', ' ')}
@@ -497,49 +786,43 @@ export default function BimbinganPage() {
         </div>
       )}
 
-      {/* Modal Dialog Tindakan Evaluasi Pembimbing */}
-      {actionItem && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.5)',
-            display: 'grid',
-            placeItems: 'center',
-            zIndex: 100,
-            padding: '1rem',
-          }}
-        >
+      {/* Modal Penilaian Seminar / Ujian */}
+      {modalPenilaian && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.5)', display: 'grid', placeItems: 'center', zIndex: 100, padding: '1rem' }}>
           <div className="card" style={{ maxWidth: '520px', width: '100%', padding: '1.5rem' }}>
             <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.4rem' }}>
-              {actionType === 'setujui'
-                ? '✅ Persetujuan Naskah Proposal'
-                : actionType === 'revisi'
-                ? '✍️ Formulir Catatan Revisi'
-                : '❌ Konfirmasi Penolakan Proposal'}
+              ⭐ Form Penilaian & Evaluasi
             </h3>
             <p className="mut" style={{ fontSize: '0.85rem', marginBottom: '1rem' }}>
-              Mahasiswa: <b>{actionItem.mahasiswa.nama}</b> ({actionItem.mahasiswa.noid})
+              Peserta: <b>{modalPenilaian.mahasiswa.nama}</b> ({modalPenilaian.mahasiswa.noid}) · Ujian: <b>{modalPenilaian.pengajuan?.jenis.replace('_', ' ').toUpperCase()}</b>
             </p>
 
             <div style={{ marginBottom: '1rem' }}>
               <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
-                Catatan Dosen Pembimbing{' '}
-                {actionType !== 'setujui' && <span style={{ color: 'var(--bad)' }}>*(Wajib diisi)</span>}
+                Nilai Angka (Skala 0 – 100) <span style={{ color: 'var(--bad)' }}>*</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={inputNilai}
+                onChange={(e) => setInputNilai(e.target.value)}
+                style={{ width: '100%', fontSize: '1.1rem', fontWeight: 700 }}
+                required
+              />
+            </div>
+
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                Catatan Evaluasi / Poin Revisi Ujian (Wajib jika ada perbaikan)
               </label>
               <textarea
                 rows={4}
                 style={{ width: '100%', padding: '0.75rem', borderRadius: '12px', border: '1px solid var(--bd)', background: 'var(--bg)', color: 'var(--tx)' }}
-                placeholder={
-                  actionType === 'revisi'
-                    ? 'Tuliskan poin-poin bab/subbab yang harus diperbaiki mahasiswa...'
-                    : actionType === 'tolak'
-                    ? 'Tuliskan alasan penolakan judul/topik penelitian...'
-                    : 'Catatan tambahan untuk mahasiswa (opsional)...'
-                }
-                value={catatan}
-                onChange={(e) => setCatatan(e.target.value)}
-                required={actionType !== 'setujui'}
+                placeholder="Tuliskan masukan metodologi, bab pembahasan, atau perbaikan naskah..."
+                value={catatanNilai}
+                onChange={(e) => setCatatanNilai(e.target.value)}
               />
             </div>
 
@@ -547,11 +830,52 @@ export default function BimbinganPage() {
               <button
                 type="button"
                 className="btn-action btn-neutral"
-                onClick={() => setActionItem(null)}
-                disabled={processing}
+                onClick={() => setModalPenilaian(null)}
+                disabled={savingNilai}
               >
                 Batal
               </button>
+              <button
+                type="button"
+                className="btn-action btn-approve"
+                style={{ padding: '0.6rem 1.4rem', fontWeight: 700 }}
+                onClick={handleSubmitPenilaian}
+                disabled={savingNilai}
+              >
+                {savingNilai ? 'Menyimpan…' : 'Kirim Penilaian Ujian'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Dialog Tindakan Evaluasi Proposal */}
+      {actionItem && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.5)', display: 'grid', placeItems: 'center', zIndex: 100, padding: '1rem' }}>
+          <div className="card" style={{ maxWidth: '520px', width: '100%', padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.4rem' }}>
+              {actionType === 'setujui' ? '✅ Persetujuan Naskah Proposal' : actionType === 'revisi' ? '✍️ Formulir Catatan Revisi' : '❌ Konfirmasi Penolakan Proposal'}
+            </h3>
+            <p className="mut" style={{ fontSize: '0.85rem', marginBottom: '1rem' }}>
+              Mahasiswa: <b>{actionItem.mahasiswa.nama}</b> ({actionItem.mahasiswa.noid})
+            </p>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                Catatan Dosen Pembimbing {actionType !== 'setujui' && <span style={{ color: 'var(--bad)' }}>*(Wajib diisi)</span>}
+              </label>
+              <textarea
+                rows={4}
+                style={{ width: '100%', padding: '0.75rem', borderRadius: '12px', border: '1px solid var(--bd)', background: 'var(--bg)', color: 'var(--tx)' }}
+                placeholder={actionType === 'revisi' ? 'Tuliskan poin bab yang harus diperbaiki mahasiswa...' : 'Catatan tambahan untuk mahasiswa...'}
+                value={catatan}
+                onChange={(e) => setCatatan(e.target.value)}
+                required={actionType !== 'setujui'}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn-action btn-neutral" onClick={() => setActionItem(null)} disabled={processing}>Batal</button>
               <button
                 type="button"
                 className={`btn-action ${actionType === 'setujui' ? 'btn-approve' : 'btn-reject'}`}
