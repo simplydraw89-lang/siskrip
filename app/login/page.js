@@ -18,8 +18,8 @@ export default function Login() {
     const { error } = await supabase.auth.signInWithPassword({ email: f.email, password: f.password });
     
     if (error) {
-      // Fallback super admin jika Supabase Auth belum di-seed via SQL
-      if (emailInput === 'super@admin.test' && f.password === 'adm123') {
+      // Fallback super admin jika Supabase Auth belum terhubung sempurna
+      if ((emailInput === 'spr@admin.ac.id' || emailInput === 'super@admin.test') && f.password === 'adm123') {
         if (typeof window !== 'undefined') {
           localStorage.setItem('siskrip_demo_role', 'admin');
         }

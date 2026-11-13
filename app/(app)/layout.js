@@ -49,17 +49,23 @@ export default function AppLayout({ children }) {
       .eq('id', session.user.id)
       .single();
 
+    const isSuperAdminEmail = session.user.email === 'spr@admin.ac.id' || session.user.email === 'super@admin.test';
+
     if (error || !data) {
       // Fallback profil dari user metadata jika row profile belum terbentuk sempurna
       setProfile({
         id: session.user.id,
-        nama: session.user.user_metadata?.nama || session.user.email?.split('@')[0],
-        role: session.user.user_metadata?.role || 'mahasiswa',
-        noid: session.user.user_metadata?.noid || '',
-        prodi: session.user.user_metadata?.prodi || '',
+        nama: session.user.user_metadata?.nama || (isSuperAdminEmail ? 'Super Admin' : session.user.email?.split('@')[0]),
+        role: isSuperAdminEmail ? 'admin' : (session.user.user_metadata?.role || 'mahasiswa'),
+        noid: session.user.user_metadata?.noid || (isSuperAdminEmail ? 'ADM-PRK-001' : ''),
+        prodi: session.user.user_metadata?.prodi || (isSuperAdminEmail ? 'Fakultas Perikanan' : ''),
         status: 'aktif',
       });
     } else {
+      if (isSuperAdminEmail && data.role !== 'admin') {
+        data.role = 'admin';
+        data.nama = data.nama || 'Super Admin';
+      }
       setProfile(data);
     }
     setLoading(false);
