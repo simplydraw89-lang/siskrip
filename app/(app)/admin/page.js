@@ -637,7 +637,7 @@ export default function AdminPage() {
                       </div>
                       <p className="mut" style={{ fontSize: '0.82rem' }}>
                         Dosen Pembimbing: <b>{item.pembimbing.nama}</b> · Diajukan pada:{' '}
-                        {item.pengajuan?.dibuat_pada ? new Date(item.pengajuan.dibuat_pada).toLocaleDateString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-'}
+                        {item.pengajuan?.dibuat_pada ? new Date(item.pengajuan.dibuat_pada).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-'}
                       </p>
                     </div>
                     <span className="status-badge status-diajukan">
