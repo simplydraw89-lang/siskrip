@@ -14,7 +14,8 @@ grant execute on function is_admin() to authenticated;
 -- 2. Trigger untuk memastikan user biasa TIDAK BISA mengubah role atau status dirinya sendiri
 create or replace function check_profile_update() returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  if not is_admin() then
+  -- Hanya batasi jika dipanggil oleh web user (auth.uid() tidak null) dan bukan admin
+  if auth.uid() is not null and not is_admin() then
     if new.role is distinct from old.role or new.status is distinct from old.status then
       raise exception 'Hanya admin yang memiliki wewenang untuk mengubah role atau status akun.';
     end if;
