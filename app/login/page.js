@@ -14,9 +14,27 @@ export default function Login() {
 
   async function masuk(e) {
     e.preventDefault(); setBusy(true); const f = form(e);
+    const emailInput = f.email?.trim().toLowerCase();
     const { error } = await supabase.auth.signInWithPassword({ email: f.email, password: f.password });
+    
+    if (error) {
+      // Fallback super admin jika Supabase Auth belum di-seed via SQL
+      if (emailInput === 'super@admin.test' && f.password === 'adm123') {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('siskrip_demo_role', 'admin');
+        }
+        setBusy(false);
+        r.replace('/dashboard');
+        return;
+      }
+      setBusy(false);
+      return err(error.message.includes('not confirmed') ? 'Email belum diverifikasi. Cek kotak masuk Anda.' : 'Email atau password salah.');
+    }
+
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('siskrip_demo_role');
+    }
     setBusy(false);
-    if (error) return err(error.message.includes('not confirmed') ? 'Email belum diverifikasi. Cek kotak masuk Anda.' : 'Email atau password salah.');
     r.replace('/dashboard');
   }
   async function daftar(e) {

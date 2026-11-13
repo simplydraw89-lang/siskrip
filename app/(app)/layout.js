@@ -26,10 +26,10 @@ export default function AppLayout({ children }) {
         localStorage.setItem('siskrip_demo_role', demoRole);
         setProfile({
           id: 'demo-user-id',
-          nama: demoRole === 'dosen' ? 'Dr. Ir. Budi Wibowo, M.Sc.' : demoRole === 'admin' ? 'Admin Departemen' : 'Budi Santoso',
+          nama: demoRole === 'dosen' ? 'Dr. Ir. Budi Wibowo, M.Sc.' : demoRole === 'admin' ? 'Super Admin' : 'Budi Santoso',
           role: demoRole,
-          noid: demoRole === 'dosen' ? '198203152008121002' : demoRole === 'admin' ? 'ADM-PRK-01' : '22/499123/PN/18000',
-          prodi: 'Akuakultur',
+          noid: demoRole === 'dosen' ? '198203152008121002' : demoRole === 'admin' ? 'ADM-PRK-001' : '22/499123/PN/18000',
+          prodi: demoRole === 'admin' ? 'Fakultas Perikanan' : 'Akuakultur',
           status: 'aktif',
         });
         setLoading(false);
