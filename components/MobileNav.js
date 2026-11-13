@@ -20,7 +20,7 @@ export default function MobileNav({ role }) {
     ],
     admin: [
       { label: 'Beranda', icon: '🏠', path: '/dashboard' },
-      { label: 'Kelola', icon: '⚙️', path: '/kelola' },
+      { label: 'Admin', icon: '⚙️', path: '/admin' },
       { label: 'Jadwal', icon: '📅', path: '/jadwal' },
       { label: 'Forum', icon: '💬', path: '/forum' },
     ],

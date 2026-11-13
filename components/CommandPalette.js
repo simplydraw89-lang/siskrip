@@ -25,7 +25,7 @@ export default function CommandPalette({ isOpen, onClose, role }) {
     ],
     admin: [
       { id: 'beranda', label: 'Beranda', icon: '🏠', path: '/dashboard', desc: 'Halaman utama & pengumuman' },
-      { id: 'kelola', label: 'Kelola', icon: '⚙️', path: '/kelola', desc: 'Kelola user, jadwal & pengumuman' },
+      { id: 'admin', label: 'Panel Admin', icon: '⚙️', path: '/admin', desc: 'Pengaturan jadwal, verifikasi & pengumuman' },
       { id: 'jadwal', label: 'Jadwal', icon: '📅', path: '/jadwal', desc: 'Master kuota & pendaftaran' },
       { id: 'forum', label: 'Forum', icon: '💬', path: '/forum', desc: 'Moderasi diskusi departemen' },
     ],
