@@ -717,3 +717,221 @@ input,select{width:100%;padding:.7rem .9rem;border:1px solid var(--bd);border-ra
   background: var(--bd);
   color: var(--tx);
 }
+
+/* Stepper Visual Skripsi */
+.stepper-wrap {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: 20px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+}
+.stepper-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.stepper-progress-track {
+  height: 8px;
+  background: var(--bd);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+}
+.stepper-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--pri), var(--acc));
+  border-radius: 99px;
+  transition: width 0.5s ease;
+}
+.stepper-steps {
+  display: flex;
+  justify-content: space-between;
+  position: relative;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+.stepper-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 100px;
+  flex: 1;
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.15s;
+}
+.stepper-step:hover {
+  transform: translateY(-2px);
+}
+.stepper-circle {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--bd);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+  color: var(--mut);
+  transition: all 0.3s;
+}
+.stepper-step.completed .stepper-circle {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+}
+.stepper-step.active .stepper-circle {
+  background: var(--pri);
+  border-color: var(--acc);
+  color: #fff;
+  box-shadow: 0 0 0 4px rgba(240, 180, 41, 0.25);
+}
+.stepper-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--tx);
+  line-height: 1.2;
+}
+.stepper-step.completed .stepper-label {
+  color: #16a34a;
+}
+.stepper-step.active .stepper-label {
+  color: var(--pri);
+  font-weight: 700;
+}
+[data-theme=dark] .stepper-step.active .stepper-label {
+  color: #7db8f0;
+}
+
+/* Next Step Card */
+.next-step-card {
+  background: linear-gradient(135deg, rgba(11, 58, 99, 0.04), rgba(240, 180, 41, 0.08));
+  border: 1px solid rgba(240, 180, 41, 0.3);
+  border-radius: 16px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+[data-theme=dark] .next-step-card {
+  background: linear-gradient(135deg, rgba(29, 111, 196, 0.1), rgba(240, 180, 41, 0.08));
+  border-color: rgba(240, 180, 41, 0.3);
+}
+
+/* File Checklist */
+.checklist-card {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: 16px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.checklist-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0.5rem;
+  border-bottom: 1px solid var(--bd);
+}
+.checklist-item:last-child {
+  border-bottom: none;
+}
+
+/* File Dropzone */
+.file-dropzone {
+  border: 2px dashed var(--bd);
+  border-radius: 14px;
+  padding: 1.75rem 1rem;
+  text-align: center;
+  background: var(--bg);
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 1rem;
+}
+.file-dropzone:hover, .file-dropzone.drag-active {
+  border-color: var(--pri);
+  background: rgba(11, 58, 99, 0.03);
+}
+[data-theme=dark] .file-dropzone:hover, [data-theme=dark] .file-dropzone.drag-active {
+  border-color: #7db8f0;
+  background: rgba(29, 111, 196, 0.1);
+}
+
+/* Timeline Linimasa */
+.timeline-wrap {
+  position: relative;
+  padding-left: 1.5rem;
+  margin-top: 1rem;
+}
+.timeline-wrap::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 6px;
+  width: 2px;
+  background: var(--bd);
+}
+.timeline-entry {
+  position: relative;
+  margin-bottom: 1.25rem;
+}
+.timeline-entry:last-child {
+  margin-bottom: 0;
+}
+.timeline-dot {
+  position: absolute;
+  left: -1.5rem;
+  top: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--pri);
+  border: 2px solid var(--card);
+  box-shadow: 0 0 0 2px var(--bd);
+}
+.timeline-dot.selesai, .timeline-dot.disetujui {
+  background: #16a34a;
+}
+.timeline-dot.revisi, .timeline-dot.ditolak {
+  background: var(--bad);
+}
+.timeline-dot.diajukan, .timeline-dot.diverifikasi {
+  background: var(--acc);
+}
+
+/* Status Badges */
+.status-diajukan {
+  background: rgba(240, 180, 41, 0.2);
+  color: #b47d00;
+}
+[data-theme=dark] .status-diajukan {
+  color: var(--acc);
+}
+.status-diverifikasi {
+  background: rgba(14, 124, 143, 0.15);
+  color: #0e7c8f;
+}
+.status-disetujui, .status-selesai {
+  background: rgba(22, 163, 74, 0.15);
+  color: #16a34a;
+}
+.status-revisi {
+  background: rgba(234, 88, 12, 0.15);
+  color: #ea580c;
+}
+.status-draft {
+  background: var(--bd);
+  color: var(--mut);
+}

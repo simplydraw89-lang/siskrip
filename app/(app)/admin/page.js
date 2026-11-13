@@ -54,6 +54,13 @@ export default function AdminPage() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [loadingUsers, setLoadingUsers] = useState(false);
 
+  // Tab 6: Verifikasi Berkas Pengajuan
+  const [antreanBerkas, setAntreanBerkas] = useState([]);
+  const [loadingBerkas, setLoadingBerkas] = useState(false);
+  const [modalBerkas, setModalBerkas] = useState(null); // { item, tipe }
+  const [catatanAdmin, setCatatanAdmin] = useState('');
+  const [processingBerkas, setProcessingBerkas] = useState(false);
+
   // Load Initial Data
   useEffect(() => {
     loadSettings();
@@ -61,6 +68,7 @@ export default function AdminPage() {
     loadPeserta();
     loadPengumuman();
     loadUsers();
+    loadAntreanBerkas();
   }, []);
 
   async function loadSettings() {
@@ -254,6 +262,192 @@ export default function AdminPage() {
     }
   }
 
+  // Pengelolaan Antrean Verifikasi Berkas Pengajuan
+  async function loadAntreanBerkas() {
+    setLoadingBerkas(true);
+    try {
+      const { data: pData } = await supabase
+        .from('pengajuan')
+        .select('*')
+        .eq('status', 'diajukan')
+        .order('dibuat_pada', { ascending: false });
+
+      if (pData && pData.length > 0) {
+        const skripsiIds = pData.map((p) => p.skripsi_id);
+        const { data: sData } = await supabase.from('skripsi').select('*').in('id', skripsiIds);
+        const skripsiMap = Object.fromEntries((sData || []).map((s) => [s.id, s]));
+
+        const mhsIds = (sData || []).map((s) => s.mahasiswa_id);
+        const pembIds = (sData || []).map((s) => s.pembimbing1_id).filter(Boolean);
+        const userIds = [...new Set([...mhsIds, ...pembIds])];
+
+        const { data: profData } = await supabase.from('profiles').select('id, nama, noid, prodi').in('id', userIds);
+        const profMap = Object.fromEntries((profData || []).map((p) => [p.id, p]));
+
+        const pIds = pData.map((p) => p.id);
+        const { data: bData } = await supabase.from('berkas').select('*').in('pengajuan_id', pIds);
+        const berkasMap = {};
+        (bData || []).forEach((b) => {
+          if (!berkasMap[b.pengajuan_id]) berkasMap[b.pengajuan_id] = [];
+          berkasMap[b.pengajuan_id].push(b);
+        });
+
+        const list = pData.map((p) => {
+          const s = skripsiMap[p.skripsi_id] || { judul: 'Draf Proposal', abstrak: '' };
+          const mhs = profMap[s.mahasiswa_id] || { nama: 'Mahasiswa', noid: '-', prodi: 'Akuakultur' };
+          const pemb = profMap[s.pembimbing1_id] || { nama: 'Dosen Pembimbing' };
+          const berkas = berkasMap[p.id] || [];
+          return { pengajuan: p, skripsi: s, mahasiswa: mhs, pembimbing: pemb, berkas };
+        });
+
+        setAntreanBerkas(list);
+      } else {
+        loadDemoBerkas();
+      }
+    } catch {
+      loadDemoBerkas();
+    } finally {
+      setLoadingBerkas(false);
+    }
+  }
+
+  function loadDemoBerkas() {
+    let dynamicDemo = null;
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('siskrip_demo_skripsi_demo-user-id');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.pengajuanList?.[0] && parsed.pengajuanList[0].status === 'diajukan') {
+            dynamicDemo = {
+              pengajuan: parsed.pengajuanList[0],
+              skripsi: parsed.skripsi,
+              mahasiswa: { nama: 'Budi Santoso', noid: '22/499123/PN/18000', prodi: 'Akuakultur' },
+              pembimbing: { nama: 'Dr. Ir. Budi Wibowo, M.Sc.' },
+              berkas: parsed.berkasList || [{ id: 'b-demo', nama: 'Draft_Proposal_Budi_Santoso.pdf', ukuran: 2450000 }],
+            };
+          }
+        } catch (e) {
+          console.warn(e);
+        }
+      }
+    }
+
+    const defaultItems = [
+      dynamicDemo || {
+        pengajuan: {
+          id: 'p-demo-1',
+          jenis: 'proposal',
+          status: 'diajukan',
+          catatan: 'Pengajuan draf proposal baru oleh mahasiswa',
+          dibuat_pada: new Date(Date.now() - 3600000 * 12).toISOString(),
+        },
+        skripsi: {
+          id: 'sk-demo-1',
+          judul: 'Kajian Efektivitas Probiotik Bacillus sp. pada Budidaya Udang Vaname (Litopenaeus vannamei)',
+          abstrak: 'Penelitian ini bertujuan untuk menganalisis efektivitas pemberian probiotik terhadap sintasan dan pertumbuhan udang vaname di tambak intensif...',
+          tahap_saat_ini: 'proposal',
+        },
+        mahasiswa: {
+          nama: 'Budi Santoso',
+          noid: '22/499123/PN/18000',
+          prodi: 'Akuakultur',
+        },
+        pembimbing: {
+          nama: 'Dr. Ir. Budi Wibowo, M.Sc.',
+        },
+        berkas: [{ id: 'b-1', nama: 'Draf_Proposal_Budi_Santoso.pdf', ukuran: 3200000 }],
+      },
+      {
+        pengajuan: {
+          id: 'p-demo-2',
+          jenis: 'proposal',
+          status: 'diajukan',
+          catatan: 'Pengajuan proposal skripsi mahasiswa THP',
+          dibuat_pada: new Date(Date.now() - 3600000 * 36).toISOString(),
+        },
+        skripsi: {
+          id: 'sk-demo-2',
+          judul: 'Formulasi Pakan Mandiri Berbasis Limbah Pengolahan Ikan Tuna untuk Efisiensi Budidaya Patin',
+          abstrak: 'Optimalisasi pemanfaatan limbah perikanan sebagai substitusi tepung ikan guna menekan rasio konversi pakan (FCR)...',
+          tahap_saat_ini: 'proposal',
+        },
+        mahasiswa: {
+          nama: 'Siti Rahmawati',
+          noid: '22/498765/PN/17988',
+          prodi: 'Teknologi Hasil Perikanan',
+        },
+        pembimbing: {
+          nama: 'Prof. Dr. Ir. Murwantoko, M.Si.',
+        },
+        berkas: [{ id: 'b-2', nama: 'Proposal_Siti_Rahmawati_THP.pdf', ukuran: 1800000 }],
+      },
+    ];
+
+    setAntreanBerkas(defaultItems);
+  }
+
+  async function handleAksiBerkas(item, statusTarget, catatan) {
+    setProcessingBerkas(true);
+    try {
+      if (item.pengajuan?.id) {
+        await supabase
+          .from('pengajuan')
+          .update({
+            status: statusTarget,
+            catatan: catatan || (statusTarget === 'diverifikasi' ? 'Berkas proposal telah diverifikasi lengkap oleh admin departemen.' : 'Perlu revisi berkas'),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', item.pengajuan.id);
+
+        await supabase.from('audit_log').insert({
+          pengajuan_id: item.pengajuan.id,
+          user_id: profile?.id,
+          status_lama: item.pengajuan.status,
+          status_baru: statusTarget,
+          catatan: catatan || (statusTarget === 'diverifikasi' ? 'Berkas diverifikasi admin' : 'Berkas dikembalikan'),
+        });
+      }
+
+      setAntreanBerkas((prev) => prev.filter((a) => a.pengajuan.id !== item.pengajuan.id));
+
+      if (typeof window !== 'undefined') {
+        const demoKey = 'siskrip_demo_skripsi_demo-user-id';
+        const cur = localStorage.getItem(demoKey);
+        if (cur) {
+          const parsed = JSON.parse(cur);
+          if (parsed.pengajuanList?.[0]) {
+            parsed.pengajuanList[0].status = statusTarget;
+            parsed.pengajuanList[0].catatan = catatan || 'Berkas telah diverifikasi admin departemen.';
+            parsed.auditLogs = [
+              {
+                id: 'audit-' + Date.now(),
+                pengajuan_id: parsed.pengajuanList[0].id,
+                status_lama: 'diajukan',
+                status_baru: statusTarget,
+                catatan: catatan || 'Berkas diverifikasi admin departemen',
+                created_at: new Date().toISOString(),
+              },
+              ...(parsed.auditLogs || []),
+            ];
+            localStorage.setItem(demoKey, JSON.stringify(parsed));
+          }
+        }
+      }
+
+      setMsg({
+        t: statusTarget === 'diverifikasi'
+          ? `Berkas proposal mahasiswa ${item.mahasiswa.nama} berhasil diverifikasi dan diteruskan ke Dosen Pembimbing!`
+          : `Berkas proposal dikembalikan ke mahasiswa ${item.mahasiswa.nama} dengan catatan revisi.`,
+      });
+      setModalBerkas(null);
+    } catch (err) {
+      setMsg({ e: 1, t: 'Gagal memproses berkas: ' + err.message });
+    } finally {
+      setProcessingBerkas(false);
+    }
+  }
+
   if (!profile || profile.role !== 'admin') {
     return <p style={{ padding: '2rem 0', color: 'var(--mut)' }}>Memverifikasi hak akses admin…</p>;
   }
@@ -302,6 +496,15 @@ export default function AdminPage() {
         >
           <span>⚙️</span>
           <span>Pengaturan Jadwal</span>
+        </button>
+
+        <button
+          className={'admin-tab-btn' + (tab === 'berkas' ? ' active' : '')}
+          onClick={() => setTab('berkas')}
+        >
+          <span>📑</span>
+          <span>Verifikasi Berkas</span>
+          {antreanBerkas.length > 0 && <span className="tab-badge">{antreanBerkas.length}</span>}
         </button>
 
         <button
@@ -394,6 +597,117 @@ export default function AdminPage() {
               {savingJadwal ? 'Menyimpan…' : 'Simpan Pengaturan'}
             </button>
           </form>
+        </div>
+      )}
+
+      {/* TAB VERIFIKASI BERKAS PENGAJUAN */}
+      {tab === 'berkas' && (
+        <div>
+          <div className="card" style={{ marginBottom: '1.5rem' }}>
+            <h3 style={{ fontSize: '1.2rem', marginBottom: '0.3rem' }}>
+              Antrean Verifikasi Berkas Pengajuan ({antreanBerkas.length})
+            </h3>
+            <p className="mut" style={{ fontSize: '0.88rem' }}>
+              Periksa kelengkapan naskah dan format proposal mahasiswa. Verifikasi berkas untuk meneruskan ke Dosen Pembimbing, atau kembalikan dengan catatan perbaikan.
+            </p>
+          </div>
+
+          {loadingBerkas ? (
+            <p className="mut">Memuat antrean berkas pengajuan…</p>
+          ) : antreanBerkas.length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+              <span style={{ fontSize: '2.5rem' }}>📑</span>
+              <h4 style={{ marginTop: '0.6rem' }}>Tidak Ada Berkas Menunggu Verifikasi</h4>
+              <p className="mut" style={{ fontSize: '0.85rem', marginTop: '0.3rem' }}>
+                Seluruh pengajuan draf proposal saat ini telah diverifikasi atau diproses dosen pembimbing.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {antreanBerkas.map((item) => (
+                <div key={item.pengajuan.id} className="card" style={{ padding: '1.5rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.8rem', marginBottom: '1rem' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.2rem' }}>
+                        <span style={{ fontWeight: 800, fontSize: '1.1rem' }}>{item.mahasiswa.nama}</span>
+                        <span className="tag">{item.mahasiswa.noid}</span>
+                        <span className="tag" style={{ background: 'rgba(11, 58, 99, 0.1)', color: 'var(--pri)', fontWeight: 600 }}>
+                          {item.mahasiswa.prodi}
+                        </span>
+                      </div>
+                      <p className="mut" style={{ fontSize: '0.82rem' }}>
+                        Dosen Pembimbing: <b>{item.pembimbing.nama}</b> · Diajukan pada:{' '}
+                        {item.pengajuan?.dibuat_pada ? new Date(item.pengajuan.dibuat_pada).toLocaleDateString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-'}
+                      </p>
+                    </div>
+                    <span className="status-badge status-diajukan">
+                      Menunggu Verifikasi Admin
+                    </span>
+                  </div>
+
+                  {/* Judul & Abstrak */}
+                  <div style={{ background: 'var(--bg)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--bd)', marginBottom: '1.25rem' }}>
+                    <h4 style={{ fontSize: '0.98rem', fontWeight: 700, marginBottom: '0.4rem', color: 'var(--pri)' }}>
+                      📖 {item.skripsi.judul}
+                    </h4>
+                    <p style={{ fontSize: '0.86rem', color: 'var(--tx)', lineHeight: 1.5, margin: 0 }}>
+                      {item.skripsi.abstrak}
+                    </p>
+                  </div>
+
+                  {/* Berkas Proposal Terlampir */}
+                  {item.berkas && item.berkas.length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Berkas Proposal (PDF):</span>
+                      {item.berkas.map((b) => (
+                        <div
+                          key={b.id}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.4rem',
+                            padding: '0.4rem 0.8rem',
+                            borderRadius: '99px',
+                            background: 'rgba(14, 124, 143, 0.1)',
+                            fontSize: '0.82rem',
+                            fontWeight: 600,
+                            color: '#0e7c8f',
+                          }}
+                        >
+                          <span>📄 {b.nama}</span>
+                          <span className="mut" style={{ fontSize: '0.75rem' }}>
+                            ({b.ukuran ? `${(b.ukuran / (1024 * 1024)).toFixed(1)} MB` : 'PDF 10MB'})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Tombol Aksi Verifikasi Admin */}
+                  <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', flexWrap: 'wrap', borderTop: '1px solid var(--bd)', paddingTop: '1rem' }}>
+                    <button
+                      className="btn-action btn-reject"
+                      style={{ padding: '0.6rem 1.2rem', fontSize: '0.85rem' }}
+                      onClick={() => {
+                        setModalBerkas(item);
+                        setCatatanAdmin('');
+                      }}
+                    >
+                      ↩️ Kembalikan / Minta Revisi
+                    </button>
+                    <button
+                      className="btn-action btn-approve"
+                      style={{ padding: '0.6rem 1.4rem', fontSize: '0.85rem', fontWeight: 700 }}
+                      onClick={() => handleAksiBerkas(item, 'diverifikasi')}
+                      disabled={processingBerkas}
+                    >
+                      {processingBerkas ? 'Memproses…' : '✅ Verifikasi Berkas & Teruskan ke Pembimbing'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -816,6 +1130,70 @@ export default function AdminPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Modal Dialog Kembalikan Berkas */}
+      {modalBerkas && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.5)',
+            display: 'grid',
+            placeItems: 'center',
+            zIndex: 100,
+            padding: '1rem',
+          }}
+        >
+          <div className="card" style={{ maxWidth: '520px', width: '100%', padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.4rem' }}>
+              ↩️ Kembalikan Berkas Pengajuan
+            </h3>
+            <p className="mut" style={{ fontSize: '0.85rem', marginBottom: '1rem' }}>
+              Mahasiswa: <b>{modalBerkas.mahasiswa.nama}</b> ({modalBerkas.mahasiswa.noid})
+            </p>
+
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                Catatan Kekurangan / Arahan Revisi Admin <span style={{ color: 'var(--bad)' }}>*(Wajib diisi)</span>
+              </label>
+              <textarea
+                rows={4}
+                style={{ width: '100%', padding: '0.75rem', borderRadius: '12px', border: '1px solid var(--bd)', background: 'var(--bg)', color: 'var(--tx)' }}
+                placeholder="Contoh: Format lembar pengesahan belum ditandatangani, atau lampiran transkrip nilai belum lengkap..."
+                value={catatanAdmin}
+                onChange={(e) => setCatatanAdmin(e.target.value)}
+                required
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn-action btn-neutral"
+                onClick={() => setModalBerkas(null)}
+                disabled={processingBerkas}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn-action btn-reject"
+                style={{ padding: '0.6rem 1.4rem' }}
+                onClick={() => {
+                  if (!catatanAdmin.trim()) {
+                    setMsg({ e: 1, t: 'Wajib mengisi catatan kekurangan berkas sebelum mengembalikan.' });
+                    return;
+                  }
+                  handleAksiBerkas(modalBerkas, 'revisi', catatanAdmin.trim());
+                }}
+                disabled={processingBerkas}
+              >
+                {processingBerkas ? 'Memproses…' : 'Kembalikan ke Mahasiswa'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
