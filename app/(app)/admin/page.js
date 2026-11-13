@@ -77,6 +77,10 @@ export default function AdminPage() {
   const [antreanYudisium, setAntreanYudisium] = useState([]);
   const [processingYudisium, setProcessingYudisium] = useState(false);
 
+  // Tab 9: Moderasi Laporan Forum
+  const [antreanLaporan, setAntreanLaporan] = useState([]);
+  const [processingLaporan, setProcessingLaporan] = useState(false);
+
   // Load Initial Data
   useEffect(() => {
     loadSettings();
@@ -458,6 +462,22 @@ export default function AdminPage() {
 
     setAntreanPenguji(defaultPengujiItems);
     setAntreanYudisium(defaultYudisiumItems);
+
+    const defaultLaporanItems = [
+      {
+        id: 'lap-1',
+        alasan: 'Indikasi spam iklan promosi di luar bidang perikanan.',
+        status: 'pending',
+        pelapor: { nama: 'Budi Santoso', noid: '22/499123/PN/18000' },
+        thread: {
+          id: 't-spam-1',
+          judul: 'Penawaran Pinjaman Dana Cepat Tanpa Agunan',
+          isi: 'Dapatkan pinjaman dana tunai bunga rendah langsung cair tanpa jaminan...',
+        },
+        created_at: new Date(Date.now() - 3600000 * 4).toISOString(),
+      },
+    ];
+    setAntreanLaporan(defaultLaporanItems);
   }
 
   async function handleAksiBerkas(item, statusTarget, catatan) {
@@ -685,6 +705,35 @@ export default function AdminPage() {
     }
   }
 
+  // Moderasi Laporan Forum
+  async function handleAksiLaporan(lap, aksi) {
+    setProcessingLaporan(true);
+    try {
+      if (lap.id && !lap.id.startsWith('lap-')) {
+        if (aksi === 'abaikan') {
+          await supabase.from('forum_laporan').update({ status: 'diabaikan' }).eq('id', lap.id);
+        } else if (aksi === 'kunci') {
+          if (lap.thread?.id) {
+            await supabase.from('forum_thread').update({ dikunci: true }).eq('id', lap.thread.id);
+          }
+          await supabase.from('forum_laporan').update({ status: 'tindakan_diambil', catatan_admin: 'Thread dikunci' }).eq('id', lap.id);
+        } else if (aksi === 'hapus') {
+          if (lap.thread?.id) {
+            await supabase.from('forum_thread').delete().eq('id', lap.thread.id);
+          }
+          await supabase.from('forum_laporan').update({ status: 'tindakan_diambil', catatan_admin: 'Thread dihapus' }).eq('id', lap.id);
+        }
+      }
+
+      setAntreanLaporan((prev) => prev.filter((l) => l.id !== lap.id));
+      setMsg({ t: `Tindakan ${aksi.toUpperCase()} untuk laporan berhasil diterapkan.` });
+    } catch (err) {
+      setMsg({ e: 1, t: 'Gagal memproses laporan: ' + err.message });
+    } finally {
+      setProcessingLaporan(false);
+    }
+  }
+
   if (!profile || profile.role !== 'admin') {
     return <p style={{ padding: '2rem 0', color: 'var(--mut)' }}>Memverifikasi hak akses admin…</p>;
   }
@@ -760,6 +809,15 @@ export default function AdminPage() {
           <span>🎓</span>
           <span>Penetapan Yudisium</span>
           {antreanYudisium.length > 0 && <span className="tab-badge">{antreanYudisium.length}</span>}
+        </button>
+
+        <button
+          className={'admin-tab-btn' + (tab === 'laporan' ? ' active' : '')}
+          onClick={() => setTab('laporan')}
+        >
+          <span>🚩</span>
+          <span>Laporan Forum</span>
+          {antreanLaporan.length > 0 && <span className="tab-badge">{antreanLaporan.length}</span>}
         </button>
 
         <button
@@ -1105,6 +1163,98 @@ export default function AdminPage() {
                       disabled={processingYudisium}
                     >
                       {processingYudisium ? 'Memproses Kelulusan…' : '🎓 Tetapkan Kelulusan Yudisium (Ubah ke Alumni)'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB MODERASI LAPORAN FORUM */}
+      {tab === 'laporan' && (
+        <div>
+          <div className="card" style={{ marginBottom: '1.5rem' }}>
+            <h3 style={{ fontSize: '1.2rem', marginBottom: '0.3rem' }}>
+              Antrean Moderasi Laporan Forum ({antreanLaporan.length})
+            </h3>
+            <p className="mut" style={{ fontSize: '0.88rem' }}>
+              Tinjau pengaduan dari sivitas akademika terkait konten spam, ujaran tidak pantas, atau pelanggaran etika diskusi.
+            </p>
+          </div>
+
+          {antreanLaporan.length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+              <span style={{ fontSize: '2.5rem' }}>🚩</span>
+              <h4 style={{ marginTop: '0.6rem' }}>Tidak Ada Laporan Konten Tertunda</h4>
+              <p className="mut" style={{ fontSize: '0.85rem', marginTop: '0.3rem' }}>
+                Seluruh laporan diskusi di Forum Fakultas dan Forum Alumni telah ditindaklanjuti.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {antreanLaporan.map((lap) => (
+                <div key={lap.id} className="card" style={{ padding: '1.5rem', border: '1px solid var(--bad)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.8rem', marginBottom: '1rem' }}>
+                    <div>
+                      <span className="tag" style={{ background: 'var(--bad)', color: '#fff', fontWeight: 700, fontSize: '0.75rem' }}>
+                        LAPORAN PENGGUNA
+                      </span>
+                      <h4 style={{ fontSize: '1.05rem', fontWeight: 800, marginTop: '0.35rem' }}>
+                        Thread Terlapor: "{lap.thread?.judul || 'Konten Diskusi'}"
+                      </h4>
+                      <p className="mut" style={{ fontSize: '0.82rem' }}>
+                        Dilaporkan oleh: <b>{lap.pelapor?.nama || 'Pengguna'}</b> ({lap.pelapor?.noid || '-'}) · Waktu: {lap.created_at ? new Date(lap.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : ''}
+                      </p>
+                    </div>
+                    <span className="status-badge status-pending">
+                      Status: {lap.status}
+                    </span>
+                  </div>
+
+                  <div style={{ background: 'var(--bg)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--bd)', marginBottom: '1.25rem' }}>
+                    <p style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--bad)', marginBottom: '0.35rem' }}>
+                      🚩 Alasan Pelaporan:
+                    </p>
+                    <p style={{ fontSize: '0.88rem', color: 'var(--tx)', margin: 0, fontStyle: 'italic' }}>
+                      "{lap.alasan}"
+                    </p>
+                  </div>
+
+                  {lap.thread?.isi && (
+                    <div style={{ background: 'rgba(0,0,0,0.02)', padding: '0.85rem', borderRadius: '10px', border: '1px dashed var(--bd)', marginBottom: '1.25rem' }}>
+                      <span className="mut" style={{ fontSize: '0.78rem', display: 'block', marginBottom: '0.2rem' }}>Cuplikan Isi Konten:</span>
+                      <p style={{ fontSize: '0.82rem', color: 'var(--mut)', margin: 0 }}>
+                        {lap.thread.isi}
+                      </p>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', borderTop: '1px solid var(--bd)', paddingTop: '1rem', flexWrap: 'wrap' }}>
+                    <button
+                      className="btn-action btn-neutral"
+                      style={{ padding: '0.55rem 1.1rem' }}
+                      onClick={() => handleAksiLaporan(lap, 'abaikan')}
+                      disabled={processingLaporan}
+                    >
+                      ✅ Abaikan Laporan
+                    </button>
+                    <button
+                      className="btn-action btn-neutral"
+                      style={{ padding: '0.55rem 1.1rem', background: '#ea580c', color: '#fff' }}
+                      onClick={() => handleAksiLaporan(lap, 'kunci')}
+                      disabled={processingLaporan}
+                    >
+                      🔒 Kunci Thread
+                    </button>
+                    <button
+                      className="btn-action btn-reject"
+                      style={{ padding: '0.55rem 1.3rem' }}
+                      onClick={() => handleAksiLaporan(lap, 'hapus')}
+                      disabled={processingLaporan}
+                    >
+                      🗑️ Hapus Konten
                     </button>
                   </div>
                 </div>
